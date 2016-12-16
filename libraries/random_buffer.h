@@ -28,6 +28,11 @@ class RandomBuffer {
     Fill();
   }
 
+  T min() const { return min_; }
+  T max() const { return max_; }
+  void min(T min) { min_ = min; }
+  void max(T max) { max_ = max; }
+
   // std::vector-like interfaces
   typedef typename std::vector<T>::size_type size_type;
         T& operator[](size_type idx)       { return buffer_[idx]; }

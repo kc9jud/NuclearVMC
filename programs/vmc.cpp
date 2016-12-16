@@ -36,7 +36,9 @@
 /////////////////////////////////////////////////////////////////
 
 const std::vector<double>::size_type kRandomCacheSize = 3000;
-const double kStepSize = 5*units::kFM;
+const double kStepSize = 1*units::kFM;
+const int kDimension = 3;
+const double kTargetAcceptance = 0.4;
 
 ////////////////////////////////////////////////////////////////
 // process arguments
@@ -138,30 +140,69 @@ int main(int argc, char *argv[]) {
   vslNewStream(&stream, VSL_BRNG_MT2203+mpi_rank, run_parameters.prng_seed);
 
   // initialize random number buffers
-  buffer::RandomBuffer<double> random_double_buffer(3*kRandomCacheSize, stream, -kStepSize, kStepSize);
-  // buffer::RandomBuffer<int> random_int_buffer(kRandomCacheSize, stream, 0, run_parameters.number_neutrons);
+  buffer::RandomBuffer<double> random_step_buffer(kDimension*kRandomCacheSize, stream, -kStepSize, kStepSize);
+  buffer::RandomBuffer<double> random_uniform_buffer(kRandomCacheSize, stream, 0, 1);
 
   // initialize single particle wave function
-  wf::SphericalOscillatorWF wavefunc(1*units::kFM);
+  wf::SphericalOscillatorWF wavefunc(0.745*units::kFM);
 
   // initialize our variables for collecting observables
-  double tot = 0, tot2 = 0;
-  int n = 0;
+  double ke = 0, pe = 0;
+  int64_t n = 0;
+
+  // initialize Metropolis state
+  Eigen::Vector3d state({0., 0., 0.});
+  double prev_norm = 1e-6;
+  int64_t  moves = 0;
+  int64_t proposals = 0;
+  double acceptance_rate;
+
   while (n < run_parameters.number_samples) {
-    #pragma omp parallel for reduction(+:tot) reduction(+:tot2) reduction(+:n)
-    for (size_t i = 0; i < kRandomCacheSize-3; ++n, i+=3) {
-      Eigen::Vector3d vec({random_double_buffer[i], random_double_buffer[i+1], random_double_buffer[i+2]});
-      double kinetic_energy = (-0.5 * units::kH_bar2 * units::kM_p) * wavefunc.local_laplacian(
-        vec
-      );
-      tot += kinetic_energy;
-      tot2 += (units::kH_bar2 * vec.dot(vec)) / (2 * units::kM_p * std::pow(units::kFM,4));
+    // main Metropolis algorithm loop (parallelized with OpenMP)
+    // #pragma omp parallel for reduction(+:ke) reduction(+:pe) reduction(+:n)
+    for (size_t i = 0; i < (kRandomCacheSize-1); ++i) {
+      // propose a new position and calculate its norm
+      Eigen::Vector3d proposed_state = state +
+        Eigen::Vector3d({
+          random_step_buffer[i],
+          random_step_buffer[i+kRandomCacheSize],
+          random_step_buffer[i+2*kRandomCacheSize]
+        });
+      double proposed_norm = wavefunc.norm(proposed_state);
+      ++proposals;
+
+      // if the new state doesn't pass the Metropolis test, continue to the next iteration
+      if ((proposed_norm/prev_norm) < 1.) {
+        if (random_uniform_buffer[i] > (proposed_norm/prev_norm)) { continue; }
+      }
+      // otherwise, move the walker
+      state = proposed_state;
+      prev_norm = proposed_norm;
+      ++moves;
+
+      if (moves > 1000) {
+        double kinetic_energy = (-0.5 * units::kH_bar2 * units::kM_p) * wavefunc.local_laplacian(state);
+        ke += kinetic_energy;
+        pe += (units::kH_bar2 * std::pow(state.dot(state), 2)) / (2 * units::kM_p * std::pow(units::kFM,6));
+        ++n;
+      }
     }
-    random_double_buffer.Fill();
+    acceptance_rate = static_cast<double>(moves)/static_cast<double>(proposals);
+    if (acceptance_rate > kTargetAcceptance) {
+      random_step_buffer.min((acceptance_rate-kTargetAcceptance+1)*random_step_buffer.min());
+      random_step_buffer.max((acceptance_rate-kTargetAcceptance+1)*random_step_buffer.max());
+    } else if (acceptance_rate < kTargetAcceptance) {
+      random_step_buffer.min((acceptance_rate-kTargetAcceptance+1)*random_step_buffer.min());
+      random_step_buffer.max((acceptance_rate-kTargetAcceptance+1)*random_step_buffer.max());
+
+    }
+    random_uniform_buffer.Fill();
+    random_step_buffer.Fill();
   }
-  std::cout << tot / n << std::endl;
-  std::cout << tot2 / n << std::endl;
-  std::cout << tot/n + tot2/n << std::endl;
+  std::cout << "Kinetic energy:   " << ke / n / units::kMeV << " MeV" << std::endl;
+  std::cout << "Potential energy: " << pe / n / units::kMeV << " MeV" << std::endl;
+  std::cout << "Total energy:     " << (ke/n + pe/n) / units::kMeV << " MeV" << std::endl;
+  std::cout << "Acceptance rate: " << acceptance_rate << std::endl;
 
   /* code */
   return 0;
