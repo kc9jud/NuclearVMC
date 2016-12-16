@@ -15,6 +15,7 @@
 
 namespace units {
   static const double kH_bar = 1.;
+  static const double kH_bar2 = 1.;
   static const double kM_p = 1.;
   static const double kC = 1.;
   static const double kFM = 4.754911;
