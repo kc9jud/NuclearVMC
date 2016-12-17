@@ -29,6 +29,7 @@
 #include "units.h"
 #include "random_buffer.h"
 #include "wavefunction.h"
+#include "potential.h"
 
 
 ////////////////////////////////////////////////////////////////
@@ -52,18 +53,19 @@ struct RunParameters {
   int number_protons;
   int number_neutrons;
   double particle_mass;
+  double oscillator_length;
 };
 
 void PrintUsage(char *argv[]) {
   std::cout << "Usage: " << argv[0]
-            << " number_samples prng_seed number_protons number_neutrons particle_mass"
+            << " number_samples prng_seed number_protons number_neutrons particle_mass oscillator_length"
             << std::endl;
   std::cout << "  -- particle mass should be given in proton masses" << std::endl;
 }
 
 void ProcessArguments(int argc, char *argv[], RunParameters& run_parameters) {
   // usage message
-  if (argc-1 != 5) {
+  if (argc-1 != 6) {
     PrintUsage(argv);
     std::exit(EXIT_FAILURE);
   }
@@ -122,6 +124,17 @@ void ProcessArguments(int argc, char *argv[], RunParameters& run_parameters) {
       std::exit(EXIT_FAILURE);
     }
   }
+
+  // variational parameter
+  {
+    std::istringstream parameter_stream(argv[6]);
+    parameter_stream >> run_parameters.oscillator_length;
+    if (!parameter_stream) {
+      PrintUsage(argv);
+      std::cerr << "Invalid oscillator length." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
 }
 
 int main(int argc, char *argv[]) {
@@ -143,8 +156,9 @@ int main(int argc, char *argv[]) {
   buffer::RandomBuffer<double> random_step_buffer(kDimension*kRandomCacheSize, stream, -kStepSize, kStepSize);
   buffer::RandomBuffer<double> random_uniform_buffer(kRandomCacheSize, stream, 0, 1);
 
-  // initialize single particle wave function
-  wf::SphericalOscillatorWF wavefunc(0.745*units::kFM);
+  // initialize single particle wave function and potential
+  wf::SphericalOscillatorWF wavefunc(run_parameters.oscillator_length*units::kFM);
+  potential::AnharmonicOscillator V(units::kFM);
 
   // initialize our variables for collecting observables
   double ke = 0, pe = 0;
@@ -183,7 +197,8 @@ int main(int argc, char *argv[]) {
       if (moves > 1000) {
         double kinetic_energy = (-0.5 * units::kH_bar2 * units::kM_p) * wavefunc.local_laplacian(state);
         ke += kinetic_energy;
-        pe += (units::kH_bar2 * std::pow(state.dot(state), 2)) / (2 * units::kM_p * std::pow(units::kFM,6));
+        pe += V(state);
+        // pe += (units::kH_bar2 * std::pow(state.dot(state), 2)) / (2 * units::kM_p * std::pow(units::kFM,6));
         ++n;
       }
     }
@@ -202,7 +217,7 @@ int main(int argc, char *argv[]) {
   std::cout << "Kinetic energy:   " << ke / n / units::kMeV << " MeV" << std::endl;
   std::cout << "Potential energy: " << pe / n / units::kMeV << " MeV" << std::endl;
   std::cout << "Total energy:     " << (ke/n + pe/n) / units::kMeV << " MeV" << std::endl;
-  std::cout << "Acceptance rate: " << acceptance_rate << std::endl;
+  std::cout << "Acceptance rate:  " << acceptance_rate * 100 << " %" << std::endl;
 
   /* code */
   return 0;

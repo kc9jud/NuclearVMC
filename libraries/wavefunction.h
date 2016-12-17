@@ -22,12 +22,12 @@
 
 namespace wf {
 
-class SingleParticleWF {
+class WaveFunction {
  public:
-  SingleParticleWF() {}
+  WaveFunction() {}
 
   virtual double value(const Eigen::Vector3d& r) { return 0; }
-  virtual double norm(const Eigen::Vector3d& r) { return 0; }
+  virtual double norm(const Eigen::Vector3d& r) { return std::pow(value(r),2); }
 
   virtual Eigen::Vector3d local_grad(const Eigen::Vector3d& r) { return {0, 0, 0}; }
   virtual Eigen::Vector3d grad(const Eigen::Vector3d& r) {
@@ -40,7 +40,7 @@ class SingleParticleWF {
   }
 };
 
-class SphericalOscillatorWF : public SingleParticleWF {
+class SphericalOscillatorWF : public WaveFunction {
  public:
   explicit SphericalOscillatorWF(double b);
 
@@ -54,6 +54,17 @@ class SphericalOscillatorWF : public SingleParticleWF {
   double b2_;
   double b4_;
 };
+
+// class AlphaParticleWF : public WaveFunction {
+//  public:
+//   AlphaParticleWF(double b_protons, double b_neutrons);
+//
+//   double value(const std::vector<Eigen::Vector3d>& positions);
+//   double norm(const std::vector<Eigen::Vector3d>& positions);
+//
+//   double value(const std::vector<Eigen::Vector3d>& positions);
+//
+// };
 
 }  // end namespace wf
 

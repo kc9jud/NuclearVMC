@@ -14,7 +14,7 @@
 # noise files
 *.dat
 *.bin
-*.pdf
+#*.pdf
 
 # local files
 *.local
